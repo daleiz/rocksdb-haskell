@@ -1,73 +1,82 @@
-name:                rocksdb-haskell
-version:             1.0.1
-synopsis:            Haskell bindings to RocksDB
-homepage:            http://github.com/serokell/rocksdb-haskell
-bug-reports:         http://github.com/serokell/rocksdb-haskell/issues
-license:             BSD3
-license-file:        LICENSE
-author:              Kim Altintop, Alexander Thiemann et.al. (see AUTHORS file)
-maintainer:          Serokell <hi@serokell.io>
-copyright:           Copyright (c) 2012-2014 The leveldb-haskell Authors, Copyright (c) 2014 The rocksdb-haskell Authors
-category:            Database, FFI
-stability:           Experimental
-build-type:          Simple
-cabal-version:       >=1.10
-tested-with:         GHC == 8.0.1
-description:
-    From <http://rocksdb.org>:
-    .
-    RocksDB is an embeddable persistent key-value store for fast storage. RocksDB can also be the foundation for a client-server database but our current focus is on embedded workloads.
-    .
-    RocksDB builds on LevelDB to be scalable to run on servers with many CPU cores, to efficiently use fast storage, to support IO-bound, in-memory and write-once workloads, and to be flexible to allow for innovation.
-extra-source-files:  README.md, AUTHORS
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: baab2fe6606216182e5a7bfd30172f68129a02e894e2e6fc285030d07edfafed
+
+name:           rocksdb-haskell
+version:        0.1.0.0
+synopsis:       Haskell bindings to RocksDB
+description:    From <http://rocksdb.org>:
+                .
+                RocksDB is an embeddable persistent key-value store for fast storage. RocksDB can also be the foundation for a client-server database but our current focus is on embedded workloads.
+                .
+                RocksDB builds on LevelDB to be scalable to run on servers with many CPU cores, to efficiently use fast storage, to support IO-bound, in-memory and write-once workloads, and to be flexible to allow for innovation.
+category:       Database, FFI
+stability:      Experimental
+homepage:       https://github.com/daleiz/rocksdb-haskell
+bug-reports:    http://github.com/daleiz/rocksdb-haskell/issues
+author:         Kim Altintop, Alexander Thiemann, Wangbin et.al. (see AUTHORS file)
+maintainer:     Wangbin <wangbin@emqx.io>
+license:        BSD3
+license-file:   LICENSE
+tested-with:    ghc == 8.8.3
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
 
 source-repository head
-  type:     git
-  location: git://github.com/serokell/rocksdb-haskell.git
+  type: git
+  location: git://github.com/daleiz/rocksdb-haskell.git
 
 library
-  exposed-modules:  Database.RocksDB
-                  , Database.RocksDB.Base
-                  , Database.RocksDB.C
-                  , Database.RocksDB.Internal
-                  , Database.RocksDB.Iterator
-                  , Database.RocksDB.Types
-
+  exposed-modules:
+      Database.RocksDB
+      Database.RocksDB.Base
+      Database.RocksDB.C
+      Database.RocksDB.Internal
+      Database.RocksDB.Iterator
+      Database.RocksDB.Types
+  other-modules:
+      Paths_rocksdb_haskell
+  hs-source-dirs:
+      src
+  other-extensions: CPP ForeignFunctionInterface EmptyDataDecls RecordWildCards
+  ghc-options: -Wall -funbox-strict-fields
+  extra-libraries:
+      rocksdb
+  build-depends:
+      base >=4.7 && <5
+    , binary
+    , bytestring
+    , data-default
+    , directory
+    , filepath
+    , resourcet
+    , transformers
   default-language: Haskell2010
-  other-extensions: CPP
-                  , ForeignFunctionInterface
-                  , EmptyDataDecls
-                  , RecordWildCards
-
-  build-depends:    base >= 3 && < 5
-                  , binary
-                  , bytestring
-                  , data-default
-                  , directory
-                  , filepath
-                  , resourcet > 0.3.2
-                  , transformers
-
-  ghc-options:      -Wall -funbox-strict-fields
-
-  hs-source-dirs:   src
-
-  extra-libraries:  rocksdb
 
 test-suite rocksdb-tests
-  ghc-options: -Wall
-  main-is: tests.hs
   type: exitcode-stdio-1.0
-  hs-source-dirs: tests
-  build-depends:       base >= 3 && < 5
-                     , rocksdb-haskell
-                     , hspec >= 1.8
-                     , process >= 1.1.0.2
-                     , bytestring >= 0.10.4.0
-                     , data-default
-                     , resourcet
-                     , transformers
-                     , temporary
-                     , hspec-expectations
-                     , QuickCheck
-  default-language:    Haskell2010
+  main-is: tests.hs
+  other-modules:
+      Paths_rocksdb_haskell
+  hs-source-dirs:
+      tests
+  ghc-options: -Wall
+  build-depends:
+      QuickCheck
+    , base >=4.7 && <5
+    , bytestring
+    , data-default
+    , hspec
+    , hspec-expectations
+    , process
+    , resourcet
+    , rocksdb-haskell
+    , temporary
+    , transformers
+  default-language: Haskell2010

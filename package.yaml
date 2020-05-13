@@ -1,0 +1,70 @@
+name: rocksdb-haskell
+version: 0.1.0.0 
+synopsis: Haskell bindings to RocksDB
+description: ! 'From <http://rocksdb.org>:
+
+
+  RocksDB is an embeddable persistent key-value store for fast storage. RocksDB can
+  also be the foundation for a client-server database but our current focus is on
+  embedded workloads.
+
+
+  RocksDB builds on LevelDB to be scalable to run on servers with many CPU cores,
+  to efficiently use fast storage, to support IO-bound, in-memory and write-once workloads,
+  and to be flexible to allow for innovation.'
+category: Database, FFI
+author: Kim Altintop, Alexander Thiemann, Wangbin et.al. (see AUTHORS file)
+maintainer: Wangbin <wangbin@emqx.io>
+license: BSD3
+homepage: https://github.com/daleiz/rocksdb-haskell 
+git: git://github.com/daleiz/rocksdb-haskell.git
+bug-reports: http://github.com/daleiz/rocksdb-haskell/issues
+
+extra-source-files:
+- README.md
+- CHANGELOG.md
+
+dependencies:
+- base >= 4.7 && < 5
+- data-default
+- transformers
+- bytestring
+- resourcet
+
+library:
+  source-dirs: src
+  other-extensions:
+  - CPP
+  - ForeignFunctionInterface
+  - EmptyDataDecls
+  - RecordWildCards
+  ghc-options:
+  - -Wall
+  - -funbox-strict-fields
+  extra-libraries: rocksdb
+  exposed-modules:
+  - Database.RocksDB
+  - Database.RocksDB.Base
+  - Database.RocksDB.C
+  - Database.RocksDB.Internal
+  - Database.RocksDB.Iterator
+  - Database.RocksDB.Types
+  dependencies:
+  - binary
+  - directory
+  - filepath
+
+tests:
+  rocksdb-tests:
+    main: tests.hs
+    source-dirs: tests
+    ghc-options: -Wall
+    dependencies:
+    - rocksdb-haskell
+    - hspec
+    - process
+    - temporary
+    - hspec-expectations
+    - QuickCheck
+stability: Experimental
+tested-with: ghc == 8.8.3
