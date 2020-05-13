@@ -30,6 +30,7 @@ dependencies:
 - transformers
 - bytestring
 - resourcet
+- conduit
 
 library:
   source-dirs: src

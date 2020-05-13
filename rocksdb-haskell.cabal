@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: baab2fe6606216182e5a7bfd30172f68129a02e894e2e6fc285030d07edfafed
+-- hash: c4526f373d52787fbb6efb1f3c967a757a9bd5684a5e49d689c97a6fdd9c14e0
 
 name:           rocksdb-haskell
 version:        0.1.0.0
@@ -52,6 +52,7 @@ library
       base >=4.7 && <5
     , binary
     , bytestring
+    , conduit
     , data-default
     , directory
     , filepath
@@ -71,6 +72,7 @@ test-suite rocksdb-tests
       QuickCheck
     , base >=4.7 && <5
     , bytestring
+    , conduit
     , data-default
     , hspec
     , hspec-expectations

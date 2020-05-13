@@ -5,8 +5,9 @@
 -- Module      : Database.RocksDB.Base
 -- Copyright   : (c) 2012-2013 The leveldb-haskell Authors
 --               (c) 2014 The rocksdb-haskell Authors
+--               (c) 2020 Wangbin 
 -- License     : BSD3
--- Maintainer  : mail@agrafix.net
+-- Maintainer  : wangbin@emqx.io 
 -- Stability   : experimental
 -- Portability : non-portable
 --
@@ -45,6 +46,7 @@ module Database.RocksDB.Base
     , get
     , getBinary
     , getBinaryVal
+    , range
     , withSnapshot
     , withSnapshotBracket
     , createSnapshot
@@ -97,6 +99,7 @@ import qualified Data.ByteString.Unsafe       as BU
 
 import qualified GHC.Foreign                  as GHC
 import qualified GHC.IO.Encoding              as GHC
+import Conduit (ConduitT, yield)
 
 -- | Create a 'BloomFilter'
 bloomFilter :: MonadResource m => Int -> m BloomFilter
@@ -328,6 +331,31 @@ write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
 
         touch (Del (PS p _ _)) = touchForeignPtr p
 
+-- | range operation
+-- 
+-- return a stream which stands for all key/value pairs 
+-- whose key is in the interval [start, end) 
+range :: MonadIO m => DB -> ByteString -> ByteString -> m (ConduitT i (ByteString, ByteString) IO ())
+range db start end = liftIO $ bracket init release rangeInternal
+  where
+    init = createIter db defaultReadOptions
+    release iter = releaseIter iter
+    rangeInternal iter = do
+      iter <- createIter db defaultReadOptions
+      iterSeek iter start
+      return $ toEnd iter end
+      where
+        toEnd iterator end = do
+          valid <- iterValid iterator
+          when valid $ do
+            entry <- iterEntry iterator
+            case entry of
+              Just (k, v) ->
+                when (k < end) $ do
+                  yield (k, v)
+                  iterNext iterator
+                  toEnd iterator end
+        
 createBloomFilter :: MonadIO m => Int -> m BloomFilter
 createBloomFilter i = do
     let i' = fromInteger . toInteger $ i
