@@ -31,6 +31,7 @@ data LSnapshot
 data LWriteBatch
 data LWriteOptions
 data LFilterPolicy
+data LMergeOperator
 
 type RocksDBPtr      = Ptr RocksDB
 type CachePtr        = Ptr LCache
@@ -345,3 +346,19 @@ foreign import ccall safe "rocksdb\\c.h rocksdb_cache_destroy"
 
 foreign import ccall safe "rocksdb\\c.h rocksdb_free"
   c_rocksdb_free :: CString -> IO ()
+
+----------------------------------------------------------------------------
+-- Merge Operator
+----------------------------------------------------------------------------
+
+foreign import ccall safe "rocksdb\\c.h rocksdb_options_set_uint64add_merge_operator"
+  c_rocksdb_options_set_uint64add_merge_operator :: OptionsPtr -> IO ()
+
+foreign import ccall safe "rocksdb\\c.h rocksdb_merge"
+  c_rocksdb_merge :: RocksDBPtr
+                  -> WriteOptionsPtr
+                  -> Key -> CSize
+                  -> Val -> CSize
+                  -> ErrPtr
+                  -> IO ()
+

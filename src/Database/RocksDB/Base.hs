@@ -5,9 +5,9 @@
 -- Module      : Database.RocksDB.Base
 -- Copyright   : (c) 2012-2013 The leveldb-haskell Authors
 --               (c) 2014 The rocksdb-haskell Authors
---               (c) 2020 Wangbin 
+--               (c) 2020 Wangbin
 -- License     : BSD3
--- Maintainer  : wangbin@emqx.io 
+-- Maintainer  : wangbin@emqx.io
 -- Stability   : experimental
 -- Portability : non-portable
 --
@@ -22,6 +22,7 @@ module Database.RocksDB.Base
     , BatchOp (..)
     , Comparator (..)
     , Compression (..)
+    , MergeOperator(..)
     , Options (..)
     , ReadOptions (..)
     , Snapshot
@@ -47,6 +48,7 @@ module Database.RocksDB.Base
     , getBinary
     , getBinaryVal
     , range
+    , merge
     , withSnapshot
     , withSnapshotBracket
     , createSnapshot
@@ -78,8 +80,8 @@ import           Control.Exception            (bracket, bracketOnError, finally)
 import           Control.Monad                (liftM, when)
 
 import           Control.Monad.IO.Class       (MonadIO (liftIO))
-import           Control.Monad.Trans.Resource (MonadResource (..), ReleaseKey, allocate,
-                                               release)
+import           Control.Monad.Trans.Resource (MonadResource (..), ReleaseKey,
+                                               allocate, release)
 import           Data.Binary                  (Binary)
 import qualified Data.Binary                  as Binary
 import           Data.ByteString              (ByteString)
@@ -97,9 +99,9 @@ import           Database.RocksDB.Types
 import qualified Data.ByteString              as BS
 import qualified Data.ByteString.Unsafe       as BU
 
+import           Conduit                      (ConduitT, yield)
 import qualified GHC.Foreign                  as GHC
 import qualified GHC.IO.Encoding              as GHC
-import Conduit (ConduitT, yield)
 
 -- | Create a 'BloomFilter'
 bloomFilter :: MonadResource m => Int -> m BloomFilter
@@ -332,10 +334,10 @@ write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
         touch (Del (PS p _ _)) = touchForeignPtr p
 
 -- | range operation
--- 
--- return a stream which stands for all key/value pairs 
--- whose key is in the interval [start, end) 
-range :: MonadIO m => DB -> ByteString -> ByteString -> m (ConduitT i (ByteString, ByteString) IO ())
+--
+-- return a stream which stands for all key/value pairs
+-- whose key is in the interval [start, end)
+range :: MonadIO m => DB -> ByteString -> ByteString -> m (ConduitT i (ByteString, ByteString) m ())
 range db start end = liftIO $ bracket init release rangeInternal
   where
     init = createIter db defaultReadOptions
@@ -355,7 +357,18 @@ range db start end = liftIO $ bracket init release rangeInternal
                   yield (k, v)
                   iterNext iterator
                   toEnd iterator end
-        
+
+-- | merge operation based on mergeOperator
+-- | mergeOperation set by Options while open db
+merge :: MonadIO m => DB -> WriteOptions -> ByteString -> ByteString -> m ()
+merge (DB db_ptr _) opts key value = liftIO $ withCWriteOpts opts $ \opts_ptr ->
+    BU.unsafeUseAsCStringLen key   $ \(key_ptr, klen) ->
+    BU.unsafeUseAsCStringLen value $ \(val_ptr, vlen) ->
+        throwIfErr "merge"
+            $ c_rocksdb_merge db_ptr opts_ptr
+                            key_ptr (intToCSize klen)
+                            val_ptr (intToCSize vlen)
+
 createBloomFilter :: MonadIO m => Int -> m BloomFilter
 createBloomFilter i = do
     let i' = fromInteger . toInteger $ i

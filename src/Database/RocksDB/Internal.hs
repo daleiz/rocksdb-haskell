@@ -103,7 +103,9 @@ mkOpts Options{..} = do
         $ intToCSize writeBufferSize
 
     cmp   <- maybeSetCmp opts_ptr comparator
-
+    
+    setMrg opts_ptr mergeOperator
+    
     return (Options' opts_ptr Nothing cmp)
 
   where
@@ -123,7 +125,12 @@ mkOpts Options{..} = do
         cmp'@(Comparator' _ _ _ cmp_ptr) <- mkComparator "user-defined" cmp
         c_rocksdb_options_set_comparator opts_ptr cmp_ptr
         return cmp'
-
+        
+    setMrg :: OptionsPtr -> MergeOperator -> IO ()
+    setMrg opts_ptr NoMerge = return ()  
+    setMrg opts_ptr UInt64Add =  
+      c_rocksdb_options_set_uint64add_merge_operator opts_ptr 
+    
 freeOpts :: Options' -> IO ()
 freeOpts (Options' opts_ptr mcache_ptr mcmp_ptr ) = do
     c_rocksdb_options_destroy opts_ptr
