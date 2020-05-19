@@ -74,4 +74,14 @@ main =  hspec $ do
         merge db def "key1" (binaryToBS (1024 :: Word64))
         get db def "key1"
       `shouldReturn` (Just (binaryToBS (1025 :: Word64)))
+      
+    it "uint64add merge operator test2" $  do
+      runResourceT $ withSystemTempDirectory "rocksdb" $ \path -> do
+        db <- open
+            path
+            defaultOptions
+            {createIfMissing = True, compression = NoCompression, mergeOperator = UInt64Add}
+        merge db def "key1" (binaryToBS (1 :: Word64))
+        get db def "key1"
+      `shouldReturn` (Just (binaryToBS (1 :: Word64)))
 
