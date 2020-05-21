@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c4526f373d52787fbb6efb1f3c967a757a9bd5684a5e49d689c97a6fdd9c14e0
+-- hash: b39b61b1267b98db138d9e33a8b4abb308c59e9ad715b66a36f4bc8fe83b2ec1
 
 name:           rocksdb-haskell
 version:        0.1.0.0
@@ -79,6 +79,6 @@ test-suite rocksdb-tests
     , process
     , resourcet
     , rocksdb-haskell
-    , temporary
+    , temporary-resourcet
     , transformers
   default-language: Haskell2010

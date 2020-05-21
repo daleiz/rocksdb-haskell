@@ -64,8 +64,9 @@ tests:
     - rocksdb-haskell
     - hspec
     - process
-    - temporary
     - hspec-expectations
     - QuickCheck
+    - temporary-resourcet
+
 stability: Experimental
 tested-with: ghc == 8.8.3

@@ -76,7 +76,8 @@ module Database.RocksDB.Base
     ) where
 
 import           Control.Applicative          ((<$>))
-import           Control.Exception            (bracket, bracketOnError, finally)
+import           Control.Exception            (bracket, bracketOnError, finally,
+                                               throwIO)
 import           Control.Monad                (liftM, when)
 
 import           Control.Monad.IO.Class       (MonadIO (liftIO))
@@ -336,8 +337,8 @@ write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
 -- | range operation
 --
 -- return a stream which stands for all key/value pairs
--- whose key is in the interval [start, end)
-range :: MonadIO m => DB -> ByteString -> ByteString -> m (ConduitT i (ByteString, ByteString) m ())
+-- whose key is in the interval [start, end]
+range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) m ()))
 range db start end = liftIO $ bracket init release rangeInternal
   where
     init = createIter db defaultReadOptions
@@ -345,16 +346,17 @@ range db start end = liftIO $ bracket init release rangeInternal
     rangeInternal iter = do
       iter <- createIter db defaultReadOptions
       iterSeek iter start
-      return $ toEnd iter end
+      return $ Just $ toEnd iter end
       where
         toEnd iterator end = do
           valid <- iterValid iterator
           when valid $ do
             entry <- iterEntry iterator
             case entry of
+              Nothing -> yield Nothing
               Just (k, v) ->
-                when (k < end) $ do
-                  yield (k, v)
+                when (k <= end) $ do
+                  yield $ Just (k, v)
                   iterNext iterator
                   toEnd iterator end
 
