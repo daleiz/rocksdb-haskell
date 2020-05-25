@@ -59,19 +59,24 @@ initializeDB path =
       }
 
 main :: IO ()
-main = hspec $ do 
+main = hspec $ do
   describe "Basic DB Functionality" $
     do
-      it "should put items into the database and retrieve them" $
+      it "put items into the database and retrieve them" $
         runResourceT
           ( do
               (_, path) <- createTempDirectory Nothing "rocksdb"
               (_, db) <- allocate (initializeDB path) close
-              put db def "zzz" "zzz"
-              get db def "zzz"
+              put db def "key1" "value1"
+              v1 <- get db def "key1"
+              put db def "key2" "value2"
+              v2 <- get db def "key2"
+              put db def "key3" "value3"
+              v3 <- get db def "key3"
+              return [v1, v2, v3]
           )
-          `shouldReturn` Just "zzz"
-      it "should put items into the database and return items in a range" $
+          `shouldReturn` [Just "value1", Just "value2", Just "value3"]
+      it "put items into the database and retrieve items in a range" $
         runResourceT
           ( do
               (_, path) <- createTempDirectory Nothing "rocksdb"
@@ -80,14 +85,18 @@ main = hspec $ do
               put db def "key2" "value2"
               put db def "key3" "value3"
               source <- range db "key1" "key3"
-              case source of Just s -> runConduit $ s .| sinkList
+              case source of
+                Nothing -> return Nothing
+                Just s -> liftIO $ do
+                  r <- runConduit $ s .| sinkList
+                  return $ Just r
           )
-          `shouldReturn` [ Just ("key1", "value1"),
-                           Just ("key2", "value2"),
-                           Just ("key3", "value3")
-                         ]
-                         
-  describe "merge operator" $ 
+          `shouldReturn` Just
+            [ Just ("key1", "value1"),
+              Just ("key2", "value2"),
+              Just ("key3", "value3")
+            ]
+  describe "merge operator" $
     do
       it "for u64add operator, default value shoule be 0" $
         runResourceT

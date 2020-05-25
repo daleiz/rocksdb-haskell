@@ -82,7 +82,7 @@ import           Control.Monad                (liftM, when)
 
 import           Control.Monad.IO.Class       (MonadIO (liftIO))
 import           Control.Monad.Trans.Resource (MonadResource (..), ReleaseKey,
-                                               allocate, release)
+                                               allocate, release, runResourceT)
 import           Data.Binary                  (Binary)
 import qualified Data.Binary                  as Binary
 import           Data.ByteString              (ByteString)
@@ -337,28 +337,117 @@ write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
 -- | range operation
 --
 -- return a stream which stands for all key/value pairs
--- whose key is in the interval [start, end]
-range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) m ()))
-range db start end = liftIO $ bracket init release rangeInternal
-  where
-    init = createIter db defaultReadOptions
-    release iter = releaseIter iter
-    rangeInternal iter = do
+-- whose key is in the interval [firstKey, lastKey]
+--range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
+--range db firstKey lastKey = liftIO $
+--  runResourceT
+--    ( do
+--        (_, iter) <-
+--          allocate
+--            (createIter db defaultReadOptions)
+--            releaseIter
+--        iterSeek iter firstKey
+--        return $ Just $ loop iter
+--    )
+--  where
+--    loop :: Iterator -> ConduitT () (Maybe (ByteString, ByteString)) IO ()
+--    loop iter = do
+--          valid <- iterValid iter
+--          if valid
+--          then do
+--            entry <- iterEntry iter
+--            case entry of
+--              Nothing -> yield Nothing
+--              Just (k, v) ->
+--                if (k <= lastKey)
+--                then do
+--                  yield $ Just (k, v)
+--                  iterNext iter
+--                  loop iter
+--                else
+--                  yield Nothing
+--          else
+--            yield Nothing
+
+--range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
+--range db firstKey lastKey = liftIO $ bracket (createIter db defaultReadOptions) releaseIter
+--  (\iter ->
+--    do
+--      --iter <- createIter db defaultReadOptions
+--      iterSeek iter firstKey
+--      return $ Just $ loop iter
+--  )
+--  where
+--    loop :: Iterator -> ConduitT () (Maybe (ByteString, ByteString)) IO ()
+--    loop iter = do
+--          valid <- iterValid iter
+--          if valid
+--          then do
+--            entry <- iterEntry iter
+--            case entry of
+--              Nothing -> yield Nothing
+--              Just (k, v) ->
+--                if (k <= lastKey)
+--                then do
+--                  yield $ Just (k, v)
+--                  iterNext iter
+--                  loop iter
+--                else
+--                  yield Nothing
+--          else
+--            yield Nothing
+
+--range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
+--range db firstKey lastKey = withIter db defaultReadOptions (
+--  \iter -> do
+--      iterSeek iter firstKey
+--      return $ Just $ loop iter
+--  )
+--  where
+--    loop :: Iterator -> ConduitT () (Maybe (ByteString, ByteString)) IO ()
+--    loop iter = do
+--          valid <- iterValid iter
+--          when valid
+--            (
+--              do
+--                entry <- iterEntry iter
+--                case entry of
+--                  Nothing -> return ()
+--                  Just (k, v) ->
+--                    when (k <= lastKey)
+--                      (
+--                        do
+--                          yield $ Just (k, v)
+--                          iterNext iter
+--                          loop iter
+--                      )
+--            )
+
+range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
+range db firstKey lastKey =
+  do
       iter <- createIter db defaultReadOptions
-      iterSeek iter start
-      return $ Just $ toEnd iter end
-      where
-        toEnd iterator end = do
-          valid <- iterValid iterator
-          when valid $ do
-            entry <- iterEntry iterator
-            case entry of
-              Nothing -> yield Nothing
-              Just (k, v) ->
-                when (k <= end) $ do
-                  yield $ Just (k, v)
-                  iterNext iterator
-                  toEnd iterator end
+      iterSeek iter firstKey
+      return $ Just $ loop iter
+  where
+    loop :: Iterator -> ConduitT () (Maybe (ByteString, ByteString)) IO ()
+    loop iter = do
+          valid <- iterValid iter
+          when valid
+            (
+              do
+                entry <- iterEntry iter
+                case entry of
+                  Nothing -> return ()
+                  Just (k, v) ->
+                    when (k <= lastKey)
+                      (
+                        do
+                          yield $ Just (k, v)
+                          iterNext iter
+                          loop iter
+                      )
+            )
 
 -- | merge operation based on mergeOperator
 -- | mergeOperation set by Options while open db
