@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Module      : Database.RocksDB.Base
@@ -144,46 +145,24 @@ createSnapshotBracket db = allocate (createSnapshot db) (releaseSnapshot db)
 --
 -- The returned handle should be released with 'close'.
 open :: MonadIO m => FilePath -> Options -> m DB
-open path opts = liftIO $ bracketOnError initialize finalize mkDB
-    where
-# ifdef mingw32_HOST_OS
-        initialize =
-            (, ()) <$> mkOpts opts
-        finalize (opts', ()) =
-            freeOpts opts'
-# else
-        initialize = do
-            opts' <- mkOpts opts
-            -- With LC_ALL=C, two things happen:
-            --   * rocksdb can't open a database with unicode in path;
-            --   * rocksdb can't create a folder properly.
-            -- So, we create the folder by ourselves, and for thart we
-            -- need to set the encoding we're going to use. On Linux
-            -- it's almost always UTC-8.
-            oldenc <- GHC.getFileSystemEncoding
-            when (createIfMissing opts) $
-                GHC.setFileSystemEncoding GHC.utf8
-            pure (opts', oldenc)
-        finalize (opts', oldenc) = do
-            freeOpts opts'
-            GHC.setFileSystemEncoding oldenc
-# endif
-        mkDB (opts'@(Options' opts_ptr _ _), _) = do
-            when (createIfMissing opts) $
-                createDirectoryIfMissing True path
-            withFilePath path $ \path_ptr ->
-                liftM (`DB` opts')
-                $ throwIfErr "open"
-                $ c_rocksdb_open opts_ptr path_ptr
+open path opts = liftIO $ withOpts opts mkDB
+  where
+    mkDB opts'@(Options' opts_ptr _ _) = do
+      when (createIfMissing opts) $
+          createDirectoryIfMissing True path
+      withFilePath path ( \path_ptr ->
+        do
+          dbPtr <- throwIfErr "open" $ c_rocksdb_open opts_ptr path_ptr
+          dbForeignPtr <- newForeignPtr c_rocksdb_close_funptr dbPtr
+          return $ DB {dbHandle = dbForeignPtr}
+        )
 
 -- | Close a database.
 --
 -- The handle will be invalid after calling this action and should no
 -- longer be used.
 close :: MonadIO m => DB -> m ()
-close (DB db_ptr opts_ptr) = liftIO $
-    c_rocksdb_close db_ptr `finally` freeOpts opts_ptr
-
+close DB{..} = liftIO $ finalizeForeignPtr dbHandle
 
 -- | Run an action with a 'Snapshot' of the database.
 withSnapshot :: MonadIO m => DB -> (Snapshot -> IO a) -> m a
@@ -194,7 +173,7 @@ withSnapshot db act = liftIO $
 --
 -- The returned 'Snapshot' should be released with 'releaseSnapshot'.
 createSnapshot :: MonadIO m => DB -> m Snapshot
-createSnapshot (DB db_ptr _) = liftIO $
+createSnapshot DB{..} = liftIO $ withForeignPtr dbHandle $ \db_ptr ->
     Snapshot <$> c_rocksdb_create_snapshot db_ptr
 
 -- | Release a snapshot.
@@ -202,12 +181,12 @@ createSnapshot (DB db_ptr _) = liftIO $
 -- The handle will be invalid after calling this action and should no
 -- longer be used.
 releaseSnapshot :: MonadIO m => DB -> Snapshot -> m ()
-releaseSnapshot (DB db_ptr _) (Snapshot snap) = liftIO $
+releaseSnapshot DB{..} (Snapshot snap) = liftIO $ withForeignPtr dbHandle $ \db_ptr ->
     c_rocksdb_release_snapshot db_ptr snap
 
 -- | Get a DB property.
 getProperty :: MonadIO m => DB -> Property -> m (Maybe ByteString)
-getProperty (DB db_ptr _) p = liftIO $
+getProperty DB{..} p = liftIO $ withForeignPtr dbHandle $ \db_ptr ->
     withCString (prop p) $ \prop_ptr -> do
         val_ptr <- c_rocksdb_property_value db_ptr prop_ptr
         if val_ptr == nullPtr
@@ -242,7 +221,8 @@ type Range  = (ByteString, ByteString)
 
 -- | Inspect the approximate sizes of the different levels.
 approximateSize :: MonadIO m => DB -> Range -> m Int64
-approximateSize (DB db_ptr _) (from, to) = liftIO $
+approximateSize DB{..} (from, to) = liftIO $
+    withForeignPtr dbHandle       $ \db_ptr ->
     BU.unsafeUseAsCStringLen from $ \(from_ptr, flen) ->
     BU.unsafeUseAsCStringLen to   $ \(to_ptr, tlen)   ->
     withArray [from_ptr]          $ \from_ptrs        ->
@@ -267,13 +247,15 @@ putBinary db wopts key val = put db wopts (binaryToBS key) (binaryToBS val)
 
 -- | Write a key/value pair.
 put :: MonadIO m => DB -> WriteOptions -> ByteString -> ByteString -> m ()
-put (DB db_ptr _) opts key value = liftIO $ withCWriteOpts opts $ \opts_ptr ->
-    BU.unsafeUseAsCStringLen key   $ \(key_ptr, klen) ->
-    BU.unsafeUseAsCStringLen value $ \(val_ptr, vlen) ->
+put DB{..} opts key value = liftIO $ withForeignPtr dbHandle put'
+  where
+    put' db_ptr = withCWriteOpts opts $ \opts_ptr ->
+      BU.unsafeUseAsCStringLen key   $ \(key_ptr, klen) ->
+      BU.unsafeUseAsCStringLen value $ \(val_ptr, vlen) ->
         throwIfErr "put"
-            $ c_rocksdb_put db_ptr opts_ptr
-                            key_ptr (intToCSize klen)
-                            val_ptr (intToCSize vlen)
+          $ c_rocksdb_put db_ptr opts_ptr
+              key_ptr (intToCSize klen)
+              val_ptr (intToCSize vlen)
 
 getBinaryVal :: (Binary v, MonadIO m) => DB -> ReadOptions -> ByteString -> m (Maybe v)
 getBinaryVal db ropts key  = fmap bsToBinary <$> get db ropts key
@@ -283,56 +265,62 @@ getBinary db ropts key = fmap bsToBinary <$> get db ropts (binaryToBS key)
 
 -- | Read a value by key.
 get :: MonadIO m => DB -> ReadOptions -> ByteString -> m (Maybe ByteString)
-get (DB db_ptr _) opts key = liftIO $ withCReadOpts opts $ \opts_ptr ->
-    BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
-    alloca                       $ \vlen_ptr -> do
+get DB{..} opts key = liftIO $ withForeignPtr dbHandle get'
+  where
+    get' db_ptr = withCReadOpts opts $ \opts_ptr ->
+      BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
+      alloca                       $ \vlen_ptr -> do
         val_ptr <- throwIfErr "get" $
-            c_rocksdb_get db_ptr opts_ptr key_ptr (intToCSize klen) vlen_ptr
+          c_rocksdb_get db_ptr opts_ptr key_ptr (intToCSize klen) vlen_ptr
         vlen <- peek vlen_ptr
         if val_ptr == nullPtr
-            then return Nothing
-            else do
-                res' <- Just <$> BS.packCStringLen (val_ptr, cSizeToInt vlen)
-                freeCString val_ptr
-                return res'
+          then return Nothing
+          else do
+            res' <- Just <$> BS.packCStringLen (val_ptr, cSizeToInt vlen)
+            freeCString val_ptr
+            return res'
 
 -- | Delete a key/value pair.
 delete :: MonadIO m => DB -> WriteOptions -> ByteString -> m ()
-delete (DB db_ptr _) opts key = liftIO $ withCWriteOpts opts $ \opts_ptr ->
-    BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
-        throwIfErr "delete"
-            $ c_rocksdb_delete db_ptr opts_ptr key_ptr (intToCSize klen)
+delete DB{..} opts key = liftIO $ withForeignPtr dbHandle delete'
+  where
+    delete' db_ptr = withCWriteOpts opts $ \opts_ptr ->
+      BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
+          throwIfErr "delete"
+              $ c_rocksdb_delete db_ptr opts_ptr key_ptr (intToCSize klen)
 
 -- | Perform a batch mutation.
 write :: MonadIO m => DB -> WriteOptions -> WriteBatch -> m ()
-write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
-    bracket c_rocksdb_writebatch_create c_rocksdb_writebatch_destroy $ \batch_ptr -> do
+write DB{..} opts batch = liftIO $ withForeignPtr dbHandle write'
+  where
+    write' db_ptr = withCWriteOpts opts $ \opts_ptr ->
+      bracket c_rocksdb_writebatch_create c_rocksdb_writebatch_destroy $ \batch_ptr -> do
 
-    mapM_ (batchAdd batch_ptr) batch
+      mapM_ (batchAdd batch_ptr) batch
 
-    throwIfErr "write" $ c_rocksdb_write db_ptr opts_ptr batch_ptr
+      throwIfErr "write" $ c_rocksdb_write db_ptr opts_ptr batch_ptr
 
-    -- ensure @ByteString@s (and respective shared @CStringLen@s) aren't GC'ed
-    -- until here
-    mapM_ (liftIO . touch) batch
+      -- ensure @ByteString@s (and respective shared @CStringLen@s) aren't GC'ed
+      -- until here
+      mapM_ (liftIO . touch) batch
 
-    where
-        batchAdd batch_ptr (Put key val) =
-            BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
-            BU.unsafeUseAsCStringLen val $ \(val_ptr, vlen) ->
-                c_rocksdb_writebatch_put batch_ptr
-                                         key_ptr (intToCSize klen)
-                                         val_ptr (intToCSize vlen)
+      where
+          batchAdd batch_ptr (Put key val) =
+              BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
+              BU.unsafeUseAsCStringLen val $ \(val_ptr, vlen) ->
+                  c_rocksdb_writebatch_put batch_ptr
+                                           key_ptr (intToCSize klen)
+                                           val_ptr (intToCSize vlen)
 
-        batchAdd batch_ptr (Del key) =
-            BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
-                c_rocksdb_writebatch_delete batch_ptr key_ptr (intToCSize klen)
+          batchAdd batch_ptr (Del key) =
+              BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
+                  c_rocksdb_writebatch_delete batch_ptr key_ptr (intToCSize klen)
 
-        touch (Put (PS p _ _) (PS p' _ _)) = do
-            touchForeignPtr p
-            touchForeignPtr p'
+          touch (Put (PS p _ _) (PS p' _ _)) = do
+              touchForeignPtr p
+              touchForeignPtr p'
 
-        touch (Del (PS p _ _)) = touchForeignPtr p
+          touch (Del (PS p _ _)) = touchForeignPtr p
 
 -- | range operation
 --
@@ -424,7 +412,7 @@ write (DB db_ptr _) opts batch = liftIO $ withCWriteOpts opts $ \opts_ptr ->
 --            )
 
 range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
-range db firstKey lastKey =
+range db firstKey lastKey = liftIO $ 
   do
       iter <- createIter db defaultReadOptions
       iterSeek iter firstKey
@@ -452,13 +440,15 @@ range db firstKey lastKey =
 -- | merge operation based on mergeOperator
 -- | mergeOperation set by Options while open db
 merge :: MonadIO m => DB -> WriteOptions -> ByteString -> ByteString -> m ()
-merge (DB db_ptr _) opts key value = liftIO $ withCWriteOpts opts $ \opts_ptr ->
-    BU.unsafeUseAsCStringLen key   $ \(key_ptr, klen) ->
-    BU.unsafeUseAsCStringLen value $ \(val_ptr, vlen) ->
-        throwIfErr "merge"
-            $ c_rocksdb_merge db_ptr opts_ptr
-                            key_ptr (intToCSize klen)
-                            val_ptr (intToCSize vlen)
+merge DB{..} opts key value = liftIO $ withForeignPtr dbHandle merge'
+  where
+    merge' db_ptr = withCWriteOpts opts $ \opts_ptr ->
+      BU.unsafeUseAsCStringLen key   $ \(key_ptr, klen) ->
+      BU.unsafeUseAsCStringLen value $ \(val_ptr, vlen) ->
+          throwIfErr "merge"
+              $ c_rocksdb_merge db_ptr opts_ptr
+                              key_ptr (intToCSize klen)
+                              val_ptr (intToCSize vlen)
 
 createBloomFilter :: MonadIO m => Int -> m BloomFilter
 createBloomFilter i = do

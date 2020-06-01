@@ -31,6 +31,7 @@ module Database.RocksDB.Internal
     , mkOpts
 
     -- * combinators
+    , withOpts
     , withCWriteOpts
     , withCReadOpts
 
@@ -59,10 +60,9 @@ import qualified Data.ByteString        as BS
 
 
 -- | Database handle
-data DB = DB RocksDBPtr Options'
-
-instance Eq DB where
-    (DB pt1 _) == (DB pt2 _) = pt1 == pt2
+data DB = DB {
+  dbHandle :: ForeignPtr RocksDB 
+} 
 
 -- | Internal representation of a 'Comparator'
 data Comparator' = Comparator' (FunPtr CompareFun)
@@ -136,6 +136,9 @@ freeOpts (Options' opts_ptr mcache_ptr mcmp_ptr ) = do
     c_rocksdb_options_destroy opts_ptr
     maybe (return ()) c_rocksdb_cache_destroy mcache_ptr
     maybe (return ()) freeComparator mcmp_ptr
+
+withOpts :: Options -> (Options' -> IO a) -> IO a
+withOpts opts = bracket (mkOpts opts) freeOpts
 
 withCWriteOpts :: WriteOptions -> (WriteOptionsPtr -> IO a) -> IO a
 withCWriteOpts WriteOptions{..} = bracket mkCWriteOpts freeCWriteOpts
