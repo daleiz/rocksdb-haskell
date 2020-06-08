@@ -84,7 +84,67 @@ main = hspec $ do
               put db def "key1" "value1"
               put db def "key2" "value2"
               put db def "key3" "value3"
-              source <- range db "key1" "key3"
+              source <- range db (Just "key1") (Just "key3")
+              case source of
+                Nothing -> return Nothing
+                Just s -> liftIO $ do
+                  r <- runConduit $ s .| sinkList
+                  return $ Just r
+          )
+          `shouldReturn` Just
+            [ Just ("key1", "value1"),
+              Just ("key2", "value2"),
+              Just ("key3", "value3")
+            ]
+      it "range without firstKey" $
+        runResourceT
+          ( do
+              (_, path) <- createTempDirectory Nothing "rocksdb"
+              (_, db) <- allocate (initializeDB path) close
+              put db def "key1" "value1"
+              put db def "key2" "value2"
+              put db def "key3" "value3"
+              source <- range db Nothing (Just "key3")
+              case source of
+                Nothing -> return Nothing
+                Just s -> liftIO $ do
+                  r <- runConduit $ s .| sinkList
+                  return $ Just r
+          )
+          `shouldReturn` Just
+            [ Just ("key1", "value1"),
+              Just ("key2", "value2"),
+              Just ("key3", "value3")
+            ]
+      it "range without lastKey" $
+        runResourceT
+          ( do
+              (_, path) <- createTempDirectory Nothing "rocksdb"
+              (_, db) <- allocate (initializeDB path) close
+              put db def "key1" "value1"
+              put db def "key2" "value2"
+              put db def "key3" "value3"
+              source <- range db (Just "key1") Nothing
+              case source of
+                Nothing -> return Nothing
+                Just s -> liftIO $ do
+                  r <- runConduit $ s .| sinkList
+                  return $ Just r
+          )
+          `shouldReturn` Just
+            [ Just ("key1", "value1"),
+              Just ("key2", "value2"),
+              Just ("key3", "value3")
+            ]
+      it "range without firstKey and lastKey" $
+        runResourceT
+          ( do
+              (_, path) <- createTempDirectory Nothing "rocksdb"
+              (_, db) <- allocate (initializeDB path) close
+              put db def "key1" "value1"
+              put db def "key2" "value2"
+              put db def "key3" "value3"
+              source <- range db Nothing Nothing
               case source of
                 Nothing -> return Nothing
                 Just s -> liftIO $ do

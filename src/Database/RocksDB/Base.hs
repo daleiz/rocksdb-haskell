@@ -411,31 +411,43 @@ write DB{..} opts batch = liftIO $ withForeignPtr dbHandle write'
 --                      )
 --            )
 
-range :: MonadIO m => DB -> ByteString -> ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
+-- | return a stream containing all kv pairs in [firstKey, lastKey] 
+-- | when firstKey == Nothing, default firstKey in db
+-- | when lastKey == Nothing, default lastKey in db
+-- |
+range :: MonadIO m => DB -> Maybe ByteString -> Maybe ByteString -> m (Maybe (ConduitT () (Maybe (ByteString, ByteString)) IO ()))
 range db firstKey lastKey = liftIO $ 
   do
       iter <- createIter db defaultReadOptions
-      iterSeek iter firstKey
+      case firstKey of
+        Nothing -> iterFirst iter 
+        Just first -> iterSeek iter first
       return $ Just $ loop iter
   where
     loop :: Iterator -> ConduitT () (Maybe (ByteString, ByteString)) IO ()
     loop iter = do
-          valid <- iterValid iter
-          when valid
-            (
-              do
-                entry <- iterEntry iter
-                case entry of
-                  Nothing -> return ()
-                  Just (k, v) ->
-                    when (k <= lastKey)
+      valid <- iterValid iter
+      when valid
+        (
+          do
+            entry <- iterEntry iter
+            case entry of
+              Nothing -> return ()
+              Just (k, v) ->
+                case lastKey of
+                  Nothing -> do 
+                    yield $ Just (k, v)
+                    iterNext iter
+                    loop iter
+                  Just last -> 
+                    when (k <= last)
                       (
                         do
                           yield $ Just (k, v)
                           iterNext iter
                           loop iter
                       )
-            )
+        )
 
 -- | merge operation based on mergeOperator
 -- | mergeOperation set by Options while open db
